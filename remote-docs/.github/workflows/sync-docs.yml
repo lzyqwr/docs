@@ -1,0 +1,38 @@
+name: Sync External Docs
+on:
+  repository_dispatch:
+    types: [sync-event]
+  workflow_dispatch: # 方便你在 GitHub 页面上手动点按钮测试
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout VitePress Repo
+        uses: actions/checkout@v4
+        with:
+          # 注意：这里的 secrets.token 必须和你仓库 Settings 里填的名称一致
+          token: ${{ secrets.MY_VITEPRESS_TOKEN }}
+
+      - name: Clone Docs Repo
+        run: |
+          # 1. 如果 remote-docs 文件夹存在则删除，不存在也不报错
+          rm -rf remote-docs
+          
+          # 2. 克隆你的文档仓库
+          git clone https://github.com/lzyqwr/docs.git remote-docs
+          
+          # 3. 删掉克隆下来的 .git 目录，避免 git 嵌套错误
+          rm -rf remote-docs/.git
+          
+          # 4. 如果你想把里面的图片等资源也同步，就这样保留整个文件夹
+          # 如果只想同步 md，可以用 find 命令清理（可选）
+
+      - name: Commit and Push
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          # 如果没有文件变化，git commit 会报错，用 || exit 0 跳过
+          git commit -m "chore: sync docs from lzyqwr/docs" || exit 0
+          git push
