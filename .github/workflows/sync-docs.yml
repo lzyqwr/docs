@@ -2,37 +2,58 @@ name: Sync External Docs
 on:
   repository_dispatch:
     types: [sync-event]
-  workflow_dispatch: # 方便你在 GitHub 页面上手动点按钮测试
+  workflow_dispatch: 
 
 jobs:
   sync:
     runs-on: ubuntu-latest
+    env:
+      # 消除 Node 20 弃用警告
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
     steps:
       - name: Checkout VitePress Repo
         uses: actions/checkout@v4
         with:
-          # 注意：这里的 secrets.token 必须和你仓库 Settings 里填的名称一致
+          # 确保你网页端的 Secret 名字真的是 MY_VITEPRESS_TOKEN
           token: ${{ secrets.MY_VITEPRESS_TOKEN }}
+          persist-credentials: true
+          fetch-depth: 0
 
-      - name: Clone Docs Repo
+      - name: Clone and Sync
         run: |
-          # 1. 如果 remote-docs 文件夹存在则删除，不存在也不报错
+          # 1. 彻底清理旧的目录（如果存在）
           rm -rf remote-docs
           
-          # 2. 克隆你的文档仓库
-          git clone https://github.com/lzyqwr/docs.git remote-docs
+          # 2. 克隆文档仓库到临时文件夹
+          git clone https://github.com/lzyqwr/docs.git temp_docs
           
-          # 3. 删掉克隆下来的 .git 目录，避免 git 嵌套错误
+          # 3. 检查是否克隆成功
+          if [ ! -d "temp_docs" ]; then
+            echo "错误：无法克隆文档仓库"
+            exit 1
+          fi
+
+          # 4. 创建目标文件夹并移动内容
+          mkdir -p remote-docs
+          cp -r temp_docs/* remote-docs/
+          
+          # 5. 清理：删除临时文件夹和其中的 .git 记录（重要：防止嵌套仓库报错）
+          rm -rf temp_docs
           rm -rf remote-docs/.git
-          
-          # 4. 如果你想把里面的图片等资源也同步，就这样保留整个文件夹
-          # 如果只想同步 md，可以用 find 命令清理（可选）
 
       - name: Commit and Push
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          # 如果没有文件变化，git commit 会报错，用 || exit 0 跳过
-          git commit -m "chore: sync docs from lzyqwr/docs" || exit 0
-          git push
+          
+          git add remote-docs/
+          
+          # 检查是否有文件变动，如果没有变动则正常退出
+          if git diff --staged --quiet; then
+            echo "没有检测到文件变化，跳过提交。"
+            exit 0
+          fi
+          
+          git commit -m "chore: sync docs from lzyqwr/docs"
+          # 强制推送到 master 分支。如果你的主分支叫 main，请把 master 改成 main
+          git push origin master --force
